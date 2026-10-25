@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>05 · alpine poster maker</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js"></script>
+    <script src="supabase-config.js"></script>
+    <script src="poster-core.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.17.4/dist/cdn.min.js"></script>
+    <style>
+        [x-cloak] { display: none !important; }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: #0f1720;
+            color: #e8eef3;
+            font: 14px/1.4 system-ui, sans-serif;
+        }
+        main { display: grid; grid-template-columns: 330px 1fr; min-height: 100vh; }
+
+        /* controls */
+        aside { background: #17222e; padding: 22px; overflow-y: auto; max-height: 100vh; }
+        h1 { margin: 0 0 4px; font-size: 20px; }
+        h1 span { color: #77c1d2; }
+        .sub { margin: 0 0 18px; color: #8ea2b2; font-size: 12px; }
+        fieldset { border: 0; border-top: 1px solid #263646; margin: 0; padding: 10px 0 4px; }
+        legend { padding: 0 6px 0 0; color: #77c1d2; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; font-weight: 700; }
+        label.row { display: grid; grid-template-columns: 74px 1fr 34px; align-items: center; gap: 8px; margin: 4px 0; color: #b9c6d1; }
+        label.row output { text-align: right; font-variant-numeric: tabular-nums; color: #e8eef3; }
+        input[type=text], select {
+            width: 100%;
+            font: inherit;
+            padding: 7px 10px;
+            border-radius: 8px;
+            border: 1px solid #2a3b4c;
+            background: #0f1720;
+            color: inherit;
+            margin: 4px 0;
+        }
+        input[type=range] { width: 100%; accent-color: #77c1d2; }
+        .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+        .chip {
+            border: 1px solid #2a3b4c;
+            background: #0f1720;
+            color: #b9c6d1;
+            border-radius: 999px;
+            padding: 5px 11px;
+            font: inherit;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        .chip.on { border-color: #77c1d2; color: #0f1720; background: #77c1d2; }
+        .palette { display: flex; gap: 2px; border-radius: 6px; overflow: hidden; height: 22px; cursor: pointer; border: 2px solid transparent; }
+        .palette.on { border-color: #77c1d2; }
+        .palette span { flex: 1; }
+        .palettes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 8px 0; }
+        .swatches { display: flex; gap: 6px; margin: 8px 0; }
+        .swatches input { width: 100%; height: 30px; border: 0; padding: 0; background: none; cursor: pointer; }
+        .toggle { display: flex; align-items: center; gap: 8px; margin: 8px 0; color: #b9c6d1; cursor: pointer; }
+        .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+        .actions button {
+            font: inherit;
+            padding: 9px;
+            border-radius: 10px;
+            border: 1px solid #2a3b4c;
+            background: #0f1720;
+            color: inherit;
+            cursor: pointer;
+        }
+        .actions button.main { background: #77c1d2; border-color: #77c1d2; color: #0f1720; font-weight: 700; grid-column: span 2; }
+        .actions button.submit { grid-column: span 2; border-color: #f472b6; color: #f472b6; font-weight: 700; }
+
+        .dialog-backdrop { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 16px; background: #000a; }
+        .dialog { width: min(400px, 100%); background: #17222e; border-radius: 18px; padding: 24px; box-shadow: 0 30px 80px #000a; }
+        .dialog h2 { margin: 0 0 6px; font-size: 20px; }
+        .dialog .note { color: #8ea2b2; margin: 0 0 14px; }
+        .dialog input { font-size: 16px; }
+        .dialog .error { color: #f8a5a5; margin: 8px 0 0; }
+        .dialog-actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 14px; }
+        .dialog-actions button { font: inherit; padding: 9px 16px; border-radius: 10px; border: 1px solid #2a3b4c; background: #0f1720; color: inherit; cursor: pointer; }
+        .dialog-actions button.main { background: #77c1d2; border-color: #77c1d2; color: #0f1720; font-weight: 700; }
+        .dialog-actions button:disabled { opacity: .4; cursor: not-allowed; }
+        .dialog-actions .link { margin-right: auto; color: #77c1d2; }
+        .actions button:disabled { opacity: .35; cursor: not-allowed; }
+        .keys { color: #6b7f90; font-size: 11px; margin-top: 12px; }
+        kbd { font: 11px ui-monospace, Menlo, monospace; border: 1px solid #2a3b4c; border-radius: 4px; padding: 0 4px; }
+
+        /* poster */
+        .stage { display: grid; place-items: center; padding: 28px; }
+        .stage svg { height: min(calc(100vh - 56px), 1000px); width: auto; max-width: 100%; box-shadow: 0 30px 80px #0008; border-radius: 4px; }
+        .animate .shape { transform-box: fill-box; transform-origin: center; animation: pulse 2.4s ease-in-out infinite; }
+        @keyframes pulse { 50% { scale: .55; } }
+
+        .toast {
+            position: fixed;
+            right: 24px;
+            bottom: 24px;
+            padding: 10px 16px;
+            border-radius: 999px;
+            background: #77c1d2;
+            color: #0f1720;
+            font-weight: 700;
+        }
+
+        .tabs { display: none; }
+
+        /* ---------- phones ---------- */
+        @media (max-width: 800px) {
+            body { font-size: 15px; }
+            main { display: flex; flex-direction: column; min-height: 100dvh; }
+
+            /* the poster stays on top while you scroll the controls */
+            .stage { order: -1; position: sticky; top: 0; z-index: 2; padding: 12px; background: #0f1720; }
+            .stage svg { height: 46dvh; width: auto; box-shadow: 0 12px 30px #0008; }
+
+            aside { max-height: none; padding: 14px 16px 96px; border-radius: 18px 18px 0 0; }
+            h1 { font-size: 17px; }
+            .sub, .keys { display: none; }
+
+            /* one group of controls at a time */
+            .tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 10px 0 4px; }
+            .tabs button { font: inherit; font-size: 13px; padding: 9px 4px; border-radius: 10px; border: 1px solid #2a3b4c; background: #0f1720; color: #b9c6d1; }
+            .tabs button.on { background: #77c1d2; border-color: #77c1d2; color: #0f1720; font-weight: 700; }
+            aside fieldset { display: none; border-top: 0; }
+            aside.tab-presets fieldset[data-tab=presets],
+            aside.tab-text fieldset[data-tab=text],
+            aside.tab-shapes fieldset[data-tab=shapes],
+            aside.tab-colors fieldset[data-tab=colors] { display: block; }
+            legend { display: none; }
+
+            /* bigger touch targets, 16px inputs so iOS doesn't zoom in */
+            input[type=text] { font-size: 16px; padding: 10px 12px; }
+            label.row { grid-template-columns: 82px 1fr 40px; margin: 10px 0; }
+            input[type=range] { height: 28px; }
+            .chip { padding: 8px 14px; font-size: 14px; }
+            .palette { height: 30px; }
+            .swatches input { height: 40px; }
+
+            /* the actions become a bar at the bottom of the screen */
+            .actions {
+                position: fixed;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                z-index: 5;
+                margin: 0;
+                grid-template-columns: 1.6fr 1fr 1fr 1fr 1fr;
+                gap: 6px;
+                padding: 10px 10px calc(10px + env(safe-area-inset-bottom));
+                background: #17222e;
+                box-shadow: 0 -8px 24px #0006;
+            }
+            .actions button { padding: 11px 2px; font-size: 12.5px; white-space: nowrap; }
+            .actions button.main, .actions button.submit { grid-column: auto; }
+            .actions .svg-btn { display: none; }
+            .toast { left: 50%; right: auto; transform: translateX(-50%); bottom: 84px; white-space: nowrap; }
+        }
+    </style>
+</head>
+<body>
+    <main
+        x-data="posterMaker"
+        x-cloak
+        @keydown.window="shortcut($event)"
+    >
+        <aside :class="'tab-' + tab">
+            <h1><span>alpine</span> poster maker</h1>
+            <p class="sub">one html file · every control is just Alpine</p>
+
+            <!-- only visible on phones -->
+            <div class="tabs" role="tablist">
+                <template x-for="t in ['presets', 'text', 'shapes', 'colors']" :key="t">
+                    <button role="tab" :class="{ on: tab === t }" :aria-selected="tab === t" @click="tab = t" x-text="t"></button>
+                </template>
+            </div>
+
+            <fieldset data-tab="presets">
+                <legend>presets</legend>
+                <div class="chips">
+                    <template x-for="name in Object.keys(presets)" :key="name">
+                        <button class="chip" @click="loadPreset(name)" x-text="name"></button>
+                    </template>
+                </div>
+            </fieldset>
+
+            <fieldset data-tab="text">
+                <legend>text</legend>
+                <input type="text" x-model="p.title" placeholder="title" aria-label="title" maxlength="24">
+                <input type="text" x-model="p.subtitle" placeholder="subtitle" aria-label="subtitle" maxlength="48">
+                <label class="row">title size <input type="range" min="40" max="140" x-model.number="p.titleSize"><output x-text="p.titleSize"></output></label>
+            </fieldset>
+
+            <fieldset data-tab="shapes">
+                <legend>shapes</legend>
+                <div class="chips">
+                    <template x-for="kind in kinds" :key="kind">
+                        <button class="chip" :class="{ on: p.shape === kind }" @click="p.shape = kind" x-text="kind"></button>
+                    </template>
+                </div>
+                <label class="row">columns <input type="range" min="2" max="16" x-model.number="p.cols"><output x-text="p.cols"></output></label>
+                <label class="row">rows <input type="range" min="2" max="18" x-model.number="p.rows"><output x-text="p.rows"></output></label>
+                <label class="row">size <input type="range" min="10" max="140" x-model.number="p.size"><output x-text="p.size + '%'"></output></label>
+                <label class="row">density <input type="range" min="10" max="100" x-model.number="p.density"><output x-text="p.density + '%'"></output></label>
+                <label class="row">rotation <input type="range" min="0" max="180" x-model.number="p.rotation"><output x-text="p.rotation + '°'"></output></label>
+                <label class="row">chaos <input type="range" min="0" max="100" x-model.number="p.chaos"><output x-text="p.chaos + '%'"></output></label>
+                <label class="toggle"><input type="checkbox" x-model="p.animate"> animate</label>
+            </fieldset>
+
+            <fieldset data-tab="colors">
+                <legend>colors</legend>
+                <div class="palettes">
+                    <template x-for="(palette, i) in palettes" :key="i">
+                        <div class="palette" :class="{ on: p.colors.join() === palette.join() }" @click="p.colors = [...palette]" :title="'palette ' + (i + 1)">
+                            <template x-for="color in palette"><span :style="{ background: color }"></span></template>
+                        </div>
+                    </template>
+                </div>
+                <div class="swatches">
+                    <template x-for="(color, i) in p.colors" :key="i">
+                        <input type="color" x-model="p.colors[i]" :aria-label="['background', 'text', 'color 1', 'color 2', 'color 3'][i]">
+                    </template>
+                </div>
+            </fieldset>
+
+            <div class="actions">
+                <button class="main" @click="randomize()">🎲 randomise</button>
+                <button @click="undo()" :disabled="history.length < 2">↶ undo</button>
+                <button @click="share()">🔗 share</button>
+                <button class="svg-btn" @click="download('svg')">⬇ svg</button>
+                <button @click="download('png')">⬇ png</button>
+                <button class="submit" @click="openSubmit()">📤 submit</button>
+            </div>
+            <p class="keys"><kbd>r</kbd> randomise · <kbd>z</kbd> undo · <kbd>a</kbd> animate · double-click the poster to randomise</p>
+        </aside>
+
+        <section class="stage">
+            <svg
+                x-ref="poster"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 600 800"
+                width="600"
+                height="800"
+                :class="{ animate: p.animate }"
+                role="img"
+                :aria-label="p.title + ' poster'"
+                @dblclick="randomize()"
+            >
+                <rect width="600" height="800" :fill="p.colors[0]" />
+                <!-- x-for doesn't work inside <svg>, so the shapes are built as markup in a getter -->
+                <g x-html="shapes"></g>
+                <text x="40" y="700" :fill="p.colors[1]" :font-size="p.titleSize" font-weight="800" font-family="system-ui, -apple-system, Helvetica, Arial, sans-serif" letter-spacing="-2" x-text="p.title"></text>
+                <text x="44" y="752" :fill="p.colors[1]" font-size="20" font-family="ui-monospace, Menlo, monospace" opacity=".8" x-text="p.subtitle"></text>
+            </svg>
+        </section>
+
+        <div class="toast" x-show="toast" x-transition x-text="toast"></div>
+
+        <!-- submit to the class gallery -->
+        <div class="dialog-backdrop" x-show="submitOpen" x-transition.opacity @click.self="submitOpen = false" @keydown.escape.window="submitOpen = false">
+            <div class="dialog" role="dialog" aria-modal="true" aria-label="submit to the gallery" x-show="submitOpen" x-transition>
+                <template x-if="!sent">
+                    <form @submit.prevent="sendPoster()">
+                        <h2>Submit to the gallery</h2>
+                        <p class="note">Your poster will be shown in class, with the name you type here.</p>
+                        <input type="text" x-ref="name" x-model="name" placeholder="your first name" maxlength="20" aria-label="your name">
+                        <p class="error" x-show="error" x-text="error"></p>
+                        <p class="note" x-show="!online">Demo mode: the gallery isn't connected yet (see supabase-config.js).</p>
+                        <div class="dialog-actions">
+                            <button type="button" @click="submitOpen = false">cancel</button>
+                            <button class="main" :disabled="!name.trim() || sending || !online" x-text="sending ? 'sending…' : 'send'"></button>
+                        </div>
+                    </form>
+                </template>
+                <template x-if="sent">
+                    <div>
+                        <h2>🎉 It's in the gallery</h2>
+                        <p class="note">Look at the screen. You can keep making posters and send another one.</p>
+                        <div class="dialog-actions">
+                            <a class="link" href="gallery.html" target="_blank">open the gallery</a>
+                            <button class="main" @click="submitOpen = false">close</button>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        document.addEventListener('alpine:init', () => {
+            Alpine.data('posterMaker', () => ({
+                presets: PRESETS,
+                palettes: PALETTES,
+                kinds: KINDS,
+                p: { ...PRESETS.bauhaus, colors: [...PRESETS.bauhaus.colors], animate: false },
+                history: [],
+                restoring: false,
+                toast: '',
+                tab: 'shapes',
+                online: !!galleryDb(),
+                submitOpen: false,
+                name: '',
+                sending: false,
+                sent: false,
+                error: '',
+
+                init() {
+                    if (location.hash.length > 1) {
+                        try {
+                            // a link can contain anything, so it's checked first (see poster-core.js)
+                            this.p = sanitizePoster(JSON.parse(decodeURIComponent(atob(location.hash.slice(1)))));
+                        } catch {}
+                    }
+                    this.history.push(JSON.stringify(this.p));
+
+                    // remember every change for undo (a little debounce, sliders fire a lot)
+                    let timer;
+                    this.$watch('p', () => {
+                        if (this.restoring) return;
+                        clearTimeout(timer);
+                        timer = setTimeout(() => {
+                            const state = JSON.stringify(this.p);
+                            if (state !== this.history[this.history.length - 1]) this.history.push(state);
+                        }, 250);
+                    });
+                },
+
+                // all shapes as svg markup (poster-core.js), recalculated when any setting changes
+                get shapes() {
+                    return posterShapes(this.p);
+                },
+
+                loadPreset(name) {
+                    this.p = { ...PRESETS[name], colors: [...PRESETS[name].colors], animate: this.p.animate };
+                },
+
+                randomize() {
+                    const pick = list => list[Math.floor(Math.random() * list.length)];
+                    this.p = {
+                        ...this.p,
+                        shape: pick(this.kinds),
+                        cols: 3 + Math.floor(Math.random() * 12),
+                        rows: 3 + Math.floor(Math.random() * 14),
+                        size: 30 + Math.floor(Math.random() * 90),
+                        density: 40 + Math.floor(Math.random() * 61),
+                        rotation: Math.floor(Math.random() * 181),
+                        chaos: Math.floor(Math.random() * 101),
+                        colors: [...pick(PALETTES)],
+                        seed: Math.floor(Math.random() * 100000),
+                    };
+                },
+
+                undo() {
+                    if (this.history.length < 2) return;
+                    this.history.pop();
+                    this.restoring = true;
+                    this.p = JSON.parse(this.history[this.history.length - 1]);
+                    this.$nextTick(() => this.restoring = false);
+                },
+
+                shortcut(e) {
+                    if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName) || e.metaKey || e.ctrlKey) return;
+                    if (e.key === 'r') this.randomize();
+                    if (e.key === 'z') this.undo();
+                    if (e.key === 'a') this.p.animate = !this.p.animate;
+                },
+
+                // the whole poster lives in the url, so a link is enough to share it
+                async share() {
+                    const url = location.href.split('#')[0] + '#' + btoa(encodeURIComponent(JSON.stringify(this.p)));
+                    history.replaceState(null, '', url);
+                    try {
+                        if (navigator.share && matchMedia('(pointer: coarse)').matches) {
+                            await navigator.share({ title: this.p.title + ' · poster', url });
+                            return;
+                        }
+                        await navigator.clipboard.writeText(url);
+                        this.flash('link copied');
+                    } catch {
+                        this.flash('link is in the address bar');
+                    }
+                },
+
+                download(type) {
+                    // a copy without the Alpine attributes, so the file is clean svg
+                    const copy = this.$refs.poster.cloneNode(true);
+                    [copy, ...copy.querySelectorAll('*')].forEach(el => {
+                        [...el.attributes].filter(a => /^(x-|:|@)/.test(a.name)).forEach(a => el.removeAttribute(a.name));
+                    });
+                    const svg = new XMLSerializer().serializeToString(copy);
+                    const name = (this.p.title || 'poster').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+                    const svgUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+
+                    if (type === 'svg') return this.save(svgUrl, name + '.svg');
+
+                    // png: draw the svg on a canvas at 2x
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = 1200;
+                        canvas.height = 1600;
+                        canvas.getContext('2d').drawImage(img, 0, 0, 1200, 1600);
+                        canvas.toBlob(async blob => {
+                            const file = new File([blob], name + '.png', { type: 'image/png' });
+                            if (navigator.canShare?.({ files: [file] }) && matchMedia('(pointer: coarse)').matches) {
+                                try {
+                                    await navigator.share({ files: [file], title: this.p.title });
+                                    return;
+                                } catch (e) {
+                                    if (e.name === 'AbortError') return; // the user closed the share sheet
+                                }
+                            }
+                            this.save(URL.createObjectURL(blob), name + '.png');
+                        });
+                    };
+                    img.src = svgUrl;
+                },
+
+                save(url, filename) {
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    a.click();
+                    this.flash('saved ' + filename);
+                },
+
+                openSubmit() {
+                    this.submitOpen = true;
+                    this.sent = false;
+                    this.error = '';
+                    this.$nextTick(() => this.$refs.name?.focus());
+                },
+
+                async sendPoster() {
+                    if (!this.name.trim() || this.sending) return;
+                    this.sending = true;
+                    this.error = '';
+                    try {
+                        await submitPoster(this.name, this.p);
+                        this.sent = true;
+                    } catch (e) {
+                        this.error = e.message || 'Something went wrong, try again.';
+                    } finally {
+                        this.sending = false;
+                    }
+                },
+
+                flash(text) {
+                    this.toast = text;
+                    setTimeout(() => this.toast = '', 1800);
+                },
+            }));
+        });
+    </script>
+</body>
+</html>
